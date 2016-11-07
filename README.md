@@ -1,5 +1,11 @@
 # easyssh
 
+This fork automatically differs from its source in the following ways:
++ it tries all keys in ~/.ssh
++ handles a server like "user@server.com"
++ pulls a password from user:password@server.com
++ allows cross-compilation by using $USER instead of user.Current
+
 ## Description
 
 Package easyssh provides a simple implementation of some SSH protocol features in Go.

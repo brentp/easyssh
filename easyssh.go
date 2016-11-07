@@ -11,8 +11,8 @@ import (
 	"io/ioutil"
 	"net"
 	"os"
-	"os/user"
 	"path/filepath"
+	"strings"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
@@ -33,20 +33,24 @@ type MakeConfig struct {
 	Password string
 }
 
+func exists(path string) bool {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return false
+	}
+	return true
+}
+
 // returns ssh.Signer from user you running app home path + cutted key path.
 // (ex. pubkey,err := getKeyFile("/.ssh/id_rsa") )
 func getKeyFile(keypath string) (ssh.Signer, error) {
-	usr, err := user.Current()
-	if err != nil {
-		return nil, err
+	file := keypath
+	if !exists(file) {
+		file = os.Getenv("HOME") + string(os.PathSeparator) + keypath
 	}
-
-	file := usr.HomeDir + keypath
 	buf, err := ioutil.ReadFile(file)
 	if err != nil {
 		return nil, err
 	}
-
 	pubkey, err := ssh.ParsePrivateKey(buf)
 	if err != nil {
 		return nil, err
@@ -55,10 +59,41 @@ func getKeyFile(keypath string) (ssh.Signer, error) {
 	return pubkey, nil
 }
 
+func getKeys() []string {
+	sshHome := os.Getenv("HOME") + string(os.PathSeparator) + ".ssh"
+	var keys []string
+	candidates, _ := filepath.Glob(sshHome + string(os.PathSeparator) + "*")
+	for _, k := range candidates {
+		if k == "config" || strings.HasSuffix(k, ".pub") || k == "known_hosts" {
+			continue
+		}
+		if !exists(k + ".pub") {
+			continue
+		}
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 // connects to remote server using MakeConfig struct and returns *ssh.Session
 func (ssh_conf *MakeConfig) connect() (*ssh.Session, error) {
 	// auths holds the detected ssh auth methods
 	auths := []ssh.AuthMethod{}
+
+	if strings.Contains(ssh_conf.Server, "@") {
+		toks := strings.Split(ssh_conf.Server, "@")
+		if len(toks) != 2 {
+			return nil, fmt.Errorf("invalid server name: %s", ssh_conf.Server)
+		}
+		ssh_conf.Server, ssh_conf.User = toks[1], toks[0]
+	}
+	if strings.Contains(ssh_conf.User, ":") {
+		toks := strings.Split(ssh_conf.User, ":")
+		if len(toks) != 2 {
+			return nil, fmt.Errorf("invalid user name: %s", ssh_conf.User)
+		}
+		ssh_conf.User, ssh_conf.Password = toks[0], toks[1]
+	}
 
 	// figure out what auths are requested, what is supported
 	if ssh_conf.Password != "" {
@@ -69,8 +104,18 @@ func (ssh_conf *MakeConfig) connect() (*ssh.Session, error) {
 		auths = append(auths, ssh.PublicKeysCallback(agent.NewClient(sshAgent).Signers))
 		defer sshAgent.Close()
 	}
+	if ssh_conf.User == "" {
+		ssh_conf.User = os.Getenv("USER")
+	}
 
-	if pubkey, err := getKeyFile(ssh_conf.Key); err == nil {
+	if ssh_conf.Password == "" && ssh_conf.Key == "" {
+		for _, key := range getKeys() {
+			if pubkey, err := getKeyFile(key); err == nil {
+				auths = append(auths, ssh.PublicKeys(pubkey))
+			}
+		}
+
+	} else if pubkey, err := getKeyFile(ssh_conf.Key); err == nil {
 		auths = append(auths, ssh.PublicKeys(pubkey))
 	}
 
