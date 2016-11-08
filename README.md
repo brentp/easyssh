@@ -5,6 +5,7 @@ This fork automatically differs from its source in the following ways:
 + handles a server like "user@server.com"
 + pulls a password from user:password@server.com
 + allows cross-compilation by using $USER instead of user.Current
++ it just supports Connect() and tries to match the interface of `*exec.Cmd`
 
 ## Description
 
