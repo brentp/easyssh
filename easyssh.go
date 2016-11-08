@@ -6,6 +6,7 @@ package easyssh
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"os"
@@ -144,6 +145,21 @@ type Session struct {
 // Start starts the command running
 func (s *Session) Start() error {
 	return s.Session.Start(s.command)
+}
+
+type sc struct {
+	io.Reader
+}
+
+// Close is a non op allowing sc to be a ReadCloser
+func (s sc) Close() error {
+	return nil
+}
+
+// StdoutPipe returns a ReadCloser with the output of the command.
+func (s *Session) StdoutPipe() (io.ReadCloser, error) {
+	p, err := s.Session.StdoutPipe()
+	return sc{p}, err
 }
 
 // Command returns one channel that combines the stdout and stderr of the command
